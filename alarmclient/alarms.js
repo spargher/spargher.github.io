@@ -1,4 +1,5 @@
 var memory = [false, false, false, false];
+var permission = false;
 
 function setFields(data) {
   var length = data.length;
@@ -15,8 +16,15 @@ function setFields(data) {
         text.innerHTML = (new Date()).toLocaleTimeString();
         if (check.checked)
         {
-          // manda la notifica
-          alert(ele.innerText);
+          if (permission)
+          {
+                // If it's okay let's create a notification
+            var notification = new Notification("Alarm " + ele.innerText + " " +  (new Date()).toLocaleTimeString());
+          }
+          else
+          {
+            alert(ele.innerText);
+          }
         }
 
       }
@@ -47,6 +55,9 @@ function clickHandler(event) {
 
 function startup() {
   document.getElementById("btnmemo").addEventListener("click", clickHandler);
+  Notification.requestPermission().then(function (perm) {
+    // If the user accepts, let's create a notification
+    permission  = (perm === "granted")});
   startApi();
 }
 

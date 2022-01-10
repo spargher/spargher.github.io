@@ -5,7 +5,7 @@ var payload = "U2FsdGVkX1+btGA+ewOIRZlOlt+L6EhZRiMLSd8lF4Rv+J/n/U/AbmjCi058cjzMN
 
 function MQTTconnect() {
     console.log("Connecting");
-    client = new Paho.MQTT.Client("io.adafruit.com", 443, "", "");
+    client = new Paho.MQTT.Client("wss://io.adafruit.com", 443, "", "");
     // set callback handlers
     client.onConnectionLost = onConnectionLost;
     client.onMessageArrived = onMessageArrived;

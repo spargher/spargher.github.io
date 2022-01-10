@@ -5,14 +5,14 @@ var payload = "U2FsdGVkX1+btGA+ewOIRZlOlt+L6EhZRiMLSd8lF4Rv+J/n/U/AbmjCi058cjzMN
 
 function MQTTconnect() {
     console.log("Connecting");
-    client = new Paho.MQTT.Client("io.adafruit.com", 8083, "", "");
+    client = new Paho.MQTT.Client("io.adafruit.com", 443, "", "");
     // set callback handlers
     client.onConnectionLost = onConnectionLost;
     client.onMessageArrived = onMessageArrived;
 
     // connect the client
     var decrypted = CryptoJS.AES.decrypt(payload, passphrase).toString(CryptoJS.enc.Utf8);
-    client.connect({ onSuccess: onConnect, userName: "spargher", password: decrypted });
+    client.connect({ onSuccess: onConnect, useSSL: true, userName: "spargher", password: decrypted });
 }
 
 // called when the client connects

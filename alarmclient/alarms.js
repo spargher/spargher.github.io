@@ -1,8 +1,8 @@
 var memory = [false, false, false, false];
+
 var permission = false;
 
-var bot_id = "51312";;
-var ss = "AAGykaDitgMj7v2xENz7JJeejyfyERcmork";
+var crypted = "U2FsdGVkX18R6b2m7V0s387Bcze1QrPZ2E6/kr9maa3M2y6m5m4ozX/6GqrSH6PNsjhCYA8J8i+R8ijWJ+JCxQ==";
 var chat_id = "5171498371";
 
 function setFields(data) {
@@ -13,6 +13,7 @@ function setFields(data) {
     var ele = document.getElementById("btn" + i);
     var text = document.getElementById("memo" + i)
     var check = document.getElementById("not" + i);
+    var telegram = document.getElementById("telegram");
     if (state) {
 
       // Non l'ho memorizzato, prima volta
@@ -20,7 +21,11 @@ function setFields(data) {
         text.innerHTML = (new Date()).toLocaleTimeString();
         if (check.checked)
         {
-          sendMessage(i);
+
+          if (telegram.checked)
+          {
+          sendMessage(ele.innerText);
+          }
           if (permission)
           {
                 // If it's okay let's create a notification
@@ -51,10 +56,11 @@ function setFields(data) {
 }
 
 function sendMessage(message) {
+  var bot_id = CryptoJS.AES.decrypt(crypted, passphrase).toString(CryptoJS.enc.Utf8);
   var settings = {
     "async": true,
     "crossDomain": true,
-    "url": "https://api.telegram.org/bot" + bot_id + "96671:" + ss + "/sendMessage",
+    "url": "https://api.telegram.org/bot" + bot_id + "/sendMessage",
     "method": "POST",
     "headers": {
       "Content-Type": "application/json",
@@ -62,11 +68,11 @@ function sendMessage(message) {
     },
     "data": JSON.stringify({
       "chat_id": chat_id,
-      "text": message
+      "text": "Alarm triggered; " + message
     })
   };
   $.ajax(settings).done(function (response){
-    console.log(reponse);
+    console.log(response);
   });
 }
 

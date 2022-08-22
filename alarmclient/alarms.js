@@ -54,7 +54,7 @@ function sendMessage(message) {
   var settings = {
     "async": true,
     "crossDomain": true,
-    "url": "https://api.telegram.org/" + bot_id + "96671:" + ss + "/sendMessage",
+    "url": "https://api.telegram.org/bot" + bot_id + "96671:" + ss + "/sendMessage",
     "method": "POST",
     "headers": {
       "Content-Type": "application/json",

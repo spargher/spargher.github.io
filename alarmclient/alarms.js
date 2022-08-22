@@ -68,7 +68,7 @@ function sendMessage(message) {
     },
     "data": JSON.stringify({
       "chat_id": chat_id,
-      "text": "Alarm triggered; " + message
+      "text": "Alarm triggered: " + message
     })
   };
   $.ajax(settings).done(function (response){

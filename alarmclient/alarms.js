@@ -1,6 +1,9 @@
 var memory = [false, false, false, false];
 var permission = false;
 
+var telegram_bot_id = "5131296671:AAGykaDitgMj7v2xENz7JJeejyfyERcmork";
+var chat_id = "5171498371";
+
 function setFields(data) {
   var length = data.length;
   var i;
@@ -16,6 +19,7 @@ function setFields(data) {
         text.innerHTML = (new Date()).toLocaleTimeString();
         if (check.checked)
         {
+          sendMessage(i);
           if (permission)
           {
                 // If it's okay let's create a notification
@@ -43,6 +47,23 @@ function setFields(data) {
     };
   }
   document.getElementById("updated").innerHTML = "Last update: " + (new Date()).toLocaleTimeString();
+}
+
+function sendMessage(message) {
+  var settings = {
+    "async": true,
+    "crossDomain": true,
+    "url": "https://api.telegram.org/" + telegram_bot_id + "/sendMessage",
+    "method": "POST",
+    "headers": {
+      "Content-Type": "application/json",
+      "cache-control": "no-cache"
+    },
+    "data": JSON.stringify({
+      "chat_id": chat_id,
+      "text": message
+    })
+  }
 }
 
 function clickHandler(event) {

@@ -1,3 +1,5 @@
+var passphrase ="Secret Passphrase";
+
 function loadState() {
     var xhttp = new XMLHttpRequest();
     xhttp.onreadystatechange = function () {
@@ -11,6 +13,11 @@ function loadState() {
 
   function startApi()
   {
+    let pass = prompt("Enter your passphrase", "");
+    if (pass)
+    {
+        passphrase = pass;
+    }
     setInterval(loadState, 1000);
   }
   

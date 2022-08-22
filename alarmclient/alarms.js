@@ -28,12 +28,12 @@ function setFields(data) {
           }
           if (permission)
           {
-                // If it's okay let's create a notification
+            // If it's okay let's create a notification
             var notification = new Notification("Alarm " + ele.innerText + " " +  (new Date()).toLocaleTimeString());
           }
           else
           {
-            alert(ele.innerText);
+            //alert(ele.innerText);
           }
         }
 
@@ -57,23 +57,19 @@ function setFields(data) {
 
 function sendMessage(message) {
   var bot_id = CryptoJS.AES.decrypt(crypted, passphrase).toString(CryptoJS.enc.Utf8);
-  var settings = {
-    "async": true,
-    "crossDomain": true,
-    "url": "https://api.telegram.org/bot" + bot_id + "/sendMessage",
-    "method": "POST",
-    "headers": {
-      "Content-Type": "application/json",
-      "cache-control": "no-cache"
-    },
-    "data": JSON.stringify({
+  
+  var xhttp = new XMLHttpRequest();
+  xhttp.onreadystatechange = function () {
+    if (xhttp.readyState == XMLHttpRequest.DONE) {
+      console.log(xhttp.responseText);
+    }
+  };  
+  xhttp.open("POST", "https://api.telegram.org/bot" + bot_id + "/sendMessage", true);
+  xhttp.setRequestHeader("Content-Type", "application/json");
+  xhttp.send( JSON.stringify({
       "chat_id": chat_id,
       "text": "Alarm triggered: " + message
-    })
-  };
-  $.ajax(settings).done(function (response){
-    console.log(response);
-  });
+    }));
 }
 
 function clickHandler(event) {

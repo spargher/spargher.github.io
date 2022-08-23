@@ -3,8 +3,8 @@ var passphrase ="Secret Passphrase";
 function loadState() {
     var xhttp = new XMLHttpRequest();
     xhttp.onreadystatechange = function () {
-      if (this.readyState == 4 && this.status == 200) {
-        setFields(JSON.parse(this.responseText).sensors);
+      if (xhttp.readyState == 4 && xhttp.status == 200) {
+        setFields(JSON.parse(xhttp.responseText).sensors);
       }
     };
     xhttp.open("GET", "http://192.168.1.169/api/sensors", true);

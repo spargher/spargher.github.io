@@ -1,0 +1,21 @@
+<html>
+
+<head>
+    
+</head>
+
+<body>
+    <h1>ESP32 Security</h1>
+    <p id="data"></p>
+</body>
+<script>
+    var data = window.sessionStorage['response'].split(',');
+    for(i=0; i < data.length; i++)
+    {
+        var el = document.getElementById("data");
+        var date = new Date(Date.parse(data[i]));
+        el.innerHTML+="<p>" + date.toLocaleString() + "</p>";
+
+    }
+</script>  
+</html>

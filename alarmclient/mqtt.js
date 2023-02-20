@@ -2,7 +2,7 @@
 var passphrase ="Secret Passphrase";
 
 var payload = "U2FsdGVkX1+btGA+ewOIRZlOlt+L6EhZRiMLSd8lF4Rv+J/n/U/AbmjCi058cjzMNuRjayZp4OWz2tPfrolcvw==";
-
+var results = [];
 function MQTTconnect() {
     console.log("Connecting");
     client = new Paho.MQTT.Client("io.adafruit.com", 443, "", "");
@@ -42,4 +42,79 @@ function startApi() {
         passphrase = pass;
     }
     MQTTconnect();
+}
+
+function getJsonAsync(url) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("GET", url);
+      xhr.setRequestHeader("X-AIO-Key", CryptoJS.AES.decrypt(payload, passphrase).toString(CryptoJS.enc.Utf8));
+      xhr.responseType = "json";
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(xhr);
+          
+        } else {
+          reject(`Error: ${xhr.status} - ${xhr.statusText}`);
+        }
+      };
+      xhr.onerror = () => {
+        reject("Error: Network Error");
+      };
+      xhr.send();
+    });
+  }
+
+function mergezonedata(data, zone){
+
+    for (i=0; i < data.length; i++)
+    {
+        var time = data[i].created_at;
+        var values = JSON.parse(data[i].value);
+        for (j=0; j < values.length; j++)
+        {
+            if (values[j].name == zone && values[j].state == true)
+            {
+                results.push(time);
+                break;
+            }
+        }
+    }
+    
+}
+
+function buildlink(endtime)
+{
+    return "https://io.adafruit.com/api/v2/spargher/feeds/alarm.zones/data?end_time=" + endtime + "&limit=1000";
+}
+
+function getzones() {
+    results = [];
+    zone = "Garage";
+    var dc = new Date();
+    var s = dc.toISOString();
+    process(s, 2000);
+}
+
+function process(endtime, counter){
+    getJsonAsync(buildlink(endtime))
+    .then((xhr) => {
+        mergezonedata(xhr.response, zone);
+        var limit = parseInt(xhr.getResponseHeader("x-pagination-limit"))
+        var count = parseInt(xhr.getResponseHeader("x-pagination-count"));
+        counter -= count;
+        if (limit <= count && counter > 0)
+        {
+            var newtime = xhr.response.slice(-1)[0].created_at;
+            process(newtime, counter);
+        }
+        else
+        {
+            window.sessionStorage['response'] = results;
+            window.open("showdata.html");
+        }
+    })
+    .catch((error) => {
+        console.error(error);
+    });
 }

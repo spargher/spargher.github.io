@@ -82,10 +82,13 @@ function clickHandler(event) {
 
 function startup() {
   document.getElementById("btnmemo").addEventListener("click", clickHandler);
+  document.getElementById("btndata").addEventListener("click", getzones);
   Notification.requestPermission().then(function (perm) {
     // If the user accepts, let's create a notification
     permission  = (perm === "granted")});
   startApi();
 }
+
+
 
 window.addEventListener('load', startup);

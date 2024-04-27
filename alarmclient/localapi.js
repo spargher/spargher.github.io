@@ -18,6 +18,6 @@ function loadState() {
     {
         passphrase = pass;
     }
-    setInterval(loadState, 1000);
+    setInterval(loadState, 2000);
   }
   

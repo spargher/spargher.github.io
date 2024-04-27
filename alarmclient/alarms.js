@@ -82,7 +82,13 @@ function clickHandler(event) {
 
 function startup() {
   document.getElementById("btnmemo").addEventListener("click", clickHandler);
-  //document.getElementById("btndata").addEventListener("click", getzones);
+  try
+  {
+    // This works in MQTT html only
+    document.getElementById("btndata").addEventListener("click", getzones);
+  }
+  catch
+  {}
   Notification.requestPermission().then(function (perm) {
     // If the user accepts, let's create a notification
     permission  = (perm === "granted")});

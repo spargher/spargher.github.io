@@ -10,6 +10,12 @@
             "name": "Avvia Chrome con localhost",
             "url": "http://localhost:8080",
             "webRoot": "${workspaceFolder}"
+        },
+        {
+            "type": "msedge",
+            "name": "http://127.0.0.1:3000/alarmclient/indexMQTT.html",
+            "request": "launch",
+            "url": "http://127.0.0.1:3000/alarmclient/indexMQTT.html"
         }
     ]
 }

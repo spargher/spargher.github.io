@@ -85,7 +85,10 @@ function startup() {
   try
   {
     // This works in MQTT html only
-    document.getElementById("btndata").addEventListener("click", getzones);
+    document.getElementById("btndatagarage").addEventListener("click", getGarage);
+    document.getElementById("btndatagiorno").addEventListener("click", getGiorno);
+    document.getElementById("btndatanotte").addEventListener("click", getNotte);
+    document.getElementById("btndatascale").addEventListener("click", getScale);
   }
   catch
   {}

@@ -88,15 +88,31 @@ function buildlink(endtime)
     return "https://io.adafruit.com/api/v2/spargher/feeds/alarm.zones/data?end_time=" + endtime + "&limit=1000";
 }
 
-function getzones() {
-    results = [];
-    zone = "Garage";
-    var dc = new Date();
-    var s = dc.toISOString();
-    process(s, 2000);
+function getGarage()
+{
+    getzones("Garage");
+}
+function getGiorno()
+{
+    getzones("Giorno");
+}
+function getNotte()
+{
+    getzones("Notte");
+}
+function getScale()
+{
+    getzones("Scale");
 }
 
-function process(endtime, counter){
+function getzones(zone) {
+    results = [];    
+    var dc = new Date();
+    var s = dc.toISOString();
+    process(s, 2000, zone);
+}
+
+function process(endtime, counter, zone){
     getJsonAsync(buildlink(endtime))
     .then((xhr) => {
         mergezonedata(xhr.response, zone);
@@ -106,11 +122,12 @@ function process(endtime, counter){
         if (limit <= count && counter > 0)
         {
             var newtime = xhr.response.slice(-1)[0].created_at;
-            process(newtime, counter);
+            process(newtime, counter, zone);
         }
         else
         {
             window.sessionStorage['response'] = results;
+            window.sessionStorage['zone'] = zone;
             window.open("showdata.html");
         }
     })

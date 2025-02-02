@@ -29,7 +29,7 @@
         button:hover {
             background: #0052a3;
         }
-        #output {
+        #output, #cleanedText {
             white-space: pre-wrap;
             background: #f5f5f5;
             padding: 1rem;
@@ -54,10 +54,8 @@
             border-radius: 4px;
             margin: 1rem 0;
         }
-        #cleanedText {
-            color: #666;
-            font-size: 0.9em;
-            margin-top: 0.5rem;
+        .section {
+            margin: 2rem 0;
         }
     </style>
 </head>
@@ -73,10 +71,9 @@
         <strong>Note:</strong> The text is automatically cleaned to keep only letters, spaces, and basic punctuation.
     </div>
 
-    <div>
+    <div class="section">
         <h3>Input Text</h3>
         <textarea id="inputText" placeholder="Enter your sample text here... (longer text works better)"></textarea>
-        <div id="cleanedText"></div>
     </div>
 
     <div class="controls">
@@ -95,7 +92,12 @@
         <button onclick="analyzeAndGenerate()">Generate Text</button>
     </div>
 
-    <div>
+    <div class="section">
+        <h3>Cleaned Text</h3>
+        <div id="cleanedText"></div>
+    </div>
+
+    <div class="section">
         <h3>Generated Text</h3>
         <div id="output"></div>
     </div>
@@ -109,23 +111,21 @@
             }
 
             cleanText(text) {
-                // Keep only letters, numbers, spaces, and basic punctuation
-                // Replace multiple spaces with single space
                 return text
                     .replace(/[^a-zA-Z0-9\s.,!?'"()-]/g, '')
                     .replace(/\s+/g, ' ')
                     .trim();
             }
 
-            analyze(text) {                
+            analyze(text) {
                 text = this.cleanText(text);
-                
+
                 this.model.clear();
                 this.startSequences = [];
 
                 text = ' '.repeat(this.contextSize) + text;
 
-                // build the modle
+                // Build the statistical model
                 for (let i = this.contextSize; i < text.length; i++) {
                     const context = text.slice(i - this.contextSize, i);
                     const nextChar = text[i];
@@ -136,13 +136,14 @@
 
                     const frequencies = this.model.get(context);
                     frequencies.set(nextChar, (frequencies.get(nextChar) || 0) + 1);
-                    
+
+                    // Store potential starting sequences
                     if (i <= text.length - this.contextSize) {
                         this.startSequences.push(text.slice(i, i + this.contextSize));
                     }
                 }
 
-                return text; 
+                return text; // Return cleaned text
             }
 
             getRandomChar(context) {
@@ -170,7 +171,7 @@
             generate(length) {
                 // Start with a random sequence from the training data
                 let result = this.startSequences[Math.floor(Math.random() * this.startSequences.length)] || ' '.repeat(this.contextSize);
-                
+
                 for (let i = 0; i < length - this.contextSize; i++) {
                     const context = result.slice(-this.contextSize);
                     const nextChar = this.getRandomChar(context);
@@ -195,15 +196,8 @@
 
             const generator = new TextGenerator(contextSize);
             const cleanedText = generator.analyze(inputText);
-                        
-            if (cleanedText !== inputText) {
-                cleanedTextDiv.textContent = "Cleaned text preview: " + 
-                    (cleanedText.length > 100 ? 
-                        cleanedText.substring(0, 100) + "..." : 
-                        cleanedText);
-            } else {
-                cleanedTextDiv.textContent = "";
-            }
+            
+            cleanedTextDiv.textContent = cleanedText;
 
             const generatedText = generator.generate(length);
             output.textContent = generatedText;

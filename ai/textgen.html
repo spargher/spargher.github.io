@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Statistical Text Generator</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+            line-height: 1.5;
+        }
+        textarea {
+            width: 100%;
+            min-height: 150px;
+            margin: 1rem 0;
+            padding: 0.5rem;
+        }
+        button {
+            background: #0066cc;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #0052a3;
+        }
+        #output {
+            white-space: pre-wrap;
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-top: 1rem;
+        }
+        .controls {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            margin: 1rem 0;
+            flex-wrap: wrap;
+        }
+        .control-group {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        .info {
+            background: #f0f7ff;
+            padding: 1rem;
+            border-radius: 4px;
+            margin: 1rem 0;
+        }
+        #cleanedText {
+            color: #666;
+            font-size: 0.9em;
+            margin-top: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <h1>Statistical Text Generator</h1>
+    
+    <div class="info">
+        <strong>How it works:</strong> This generator analyzes the input text to learn patterns based on character sequences. 
+        The context size determines how many previous characters are used to predict the next one. 
+        A larger context size (4-5) creates more coherent but less varied output, 
+        while a smaller size (1-2) creates more random but potentially more creative results.
+        <br><br>
+        <strong>Note:</strong> The text is automatically cleaned to keep only letters, spaces, and basic punctuation.
+    </div>
+
+    <div>
+        <h3>Input Text</h3>
+        <textarea id="inputText" placeholder="Enter your sample text here... (longer text works better)"></textarea>
+        <div id="cleanedText"></div>
+    </div>
+
+    <div class="controls">
+        <div class="control-group">
+            <label for="contextSize">Context Size:</label>
+            <input type="number" id="contextSize" value="3" min="1" max="5" title="Number of previous characters to consider">
+            <span>(1-5)</span>
+        </div>
+        
+        <div class="control-group">
+            <label for="length">Output Length:</label>
+            <input type="number" id="length" value="200" min="1" max="1000">
+            <span>characters</span>
+        </div>
+
+        <button onclick="analyzeAndGenerate()">Generate Text</button>
+    </div>
+
+    <div>
+        <h3>Generated Text</h3>
+        <div id="output"></div>
+    </div>
+
+    <script>
+        class TextGenerator {
+            constructor(contextSize = 3) {
+                this.contextSize = contextSize;
+                this.model = new Map();
+                this.startSequences = [];
+            }
+
+            cleanText(text) {
+                // Keep only letters, numbers, spaces, and basic punctuation
+                // Replace multiple spaces with single space
+                return text
+                    .replace(/[^a-zA-Z0-9\s.,!?'"()-]/g, '')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+            }
+
+            analyze(text) {
+                // Clean the text first
+                text = this.cleanText(text);
+
+                // Reset the model
+                this.model.clear();
+                this.startSequences = [];
+
+                // Add padding to the start of text
+                text = ' '.repeat(this.contextSize) + text;
+
+                // Build the statistical model
+                for (let i = this.contextSize; i < text.length; i++) {
+                    const context = text.slice(i - this.contextSize, i);
+                    const nextChar = text[i];
+
+                    if (!this.model.has(context)) {
+                        this.model.set(context, new Map());
+                    }
+
+                    const frequencies = this.model.get(context);
+                    frequencies.set(nextChar, (frequencies.get(nextChar) || 0) + 1);
+
+                    // Store potential starting sequences
+                    if (i <= text.length - this.contextSize) {
+                        this.startSequences.push(text.slice(i, i + this.contextSize));
+                    }
+                }
+
+                return text; // Return cleaned text
+            }
+
+            getRandomChar(context) {
+                if (!this.model.has(context)) {
+                    return ' '; // Return space if context not found
+                }
+
+                const frequencies = this.model.get(context);
+                let total = 0;
+                for (const count of frequencies.values()) {
+                    total += count;
+                }
+
+                let random = Math.random() * total;
+                for (const [char, count] of frequencies.entries()) {
+                    random -= count;
+                    if (random <= 0) {
+                        return char;
+                    }
+                }
+
+                return ' '; // Fallback
+            }
+
+            generate(length) {
+                // Start with a random sequence from the training data
+                let result = this.startSequences[Math.floor(Math.random() * this.startSequences.length)] || ' '.repeat(this.contextSize);
+
+                // Generate the rest of the text
+                for (let i = 0; i < length - this.contextSize; i++) {
+                    const context = result.slice(-this.contextSize);
+                    const nextChar = this.getRandomChar(context);
+                    result += nextChar;
+                }
+
+                return result.trim();
+            }
+        }
+
+        function analyzeAndGenerate() {
+            const inputText = document.getElementById('inputText').value;
+            const length = parseInt(document.getElementById('length').value);
+            const contextSize = parseInt(document.getElementById('contextSize').value);
+            const output = document.getElementById('output');
+            const cleanedTextDiv = document.getElementById('cleanedText');
+
+            if (inputText.length < contextSize) {
+                output.textContent = "Input text needs to be longer than the context size.";
+                return;
+            }
+
+            const generator = new TextGenerator(contextSize);
+            const cleanedText = generator.analyze(inputText);
+            
+            // Show preview of cleaned text
+            if (cleanedText !== inputText) {
+                cleanedTextDiv.textContent = "Cleaned text preview: " + 
+                    (cleanedText.length > 100 ? 
+                        cleanedText.substring(0, 100) + "..." : 
+                        cleanedText);
+            } else {
+                cleanedTextDiv.textContent = "";
+            }
+
+            const generatedText = generator.generate(length);
+            output.textContent = generatedText;
+        }
+    </script>
+</body>
+</html>

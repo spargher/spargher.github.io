@@ -6,7 +6,7 @@ var results = [];
 function MQTTconnect() {
     console.log("Connecting");
     client = new Paho.MQTT.Client("io.adafruit.com", 443, "", "");
-    // set callback handlers
+    
     client.onConnectionLost = onConnectionLost;
     client.onMessageArrived = onMessageArrived;
 

@@ -117,18 +117,15 @@
                     .trim();
             }
 
-            analyze(text) {
-                // Clean the text first
+            analyze(text) {                
                 text = this.cleanText(text);
-
-                // Reset the model
+                
                 this.model.clear();
                 this.startSequences = [];
 
-                // Add padding to the start of text
                 text = ' '.repeat(this.contextSize) + text;
 
-                // Build the statistical model
+                // build the modle
                 for (let i = this.contextSize; i < text.length; i++) {
                     const context = text.slice(i - this.contextSize, i);
                     const nextChar = text[i];
@@ -139,19 +136,18 @@
 
                     const frequencies = this.model.get(context);
                     frequencies.set(nextChar, (frequencies.get(nextChar) || 0) + 1);
-
-                    // Store potential starting sequences
+                    
                     if (i <= text.length - this.contextSize) {
                         this.startSequences.push(text.slice(i, i + this.contextSize));
                     }
                 }
 
-                return text; // Return cleaned text
+                return text; 
             }
 
             getRandomChar(context) {
                 if (!this.model.has(context)) {
-                    return ' '; // Return space if context not found
+                    return ' '; // Context not found
                 }
 
                 const frequencies = this.model.get(context);
@@ -174,8 +170,7 @@
             generate(length) {
                 // Start with a random sequence from the training data
                 let result = this.startSequences[Math.floor(Math.random() * this.startSequences.length)] || ' '.repeat(this.contextSize);
-
-                // Generate the rest of the text
+                
                 for (let i = 0; i < length - this.contextSize; i++) {
                     const context = result.slice(-this.contextSize);
                     const nextChar = this.getRandomChar(context);
@@ -200,8 +195,7 @@
 
             const generator = new TextGenerator(contextSize);
             const cleanedText = generator.analyze(inputText);
-            
-            // Show preview of cleaned text
+                        
             if (cleanedText !== inputText) {
                 cleanedTextDiv.textContent = "Cleaned text preview: " + 
                     (cleanedText.length > 100 ? 

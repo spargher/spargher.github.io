@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Statistical Text Generator</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+            line-height: 1.5;
+        }
+        textarea {
+            width: 100%;
+            min-height: 150px;
+            margin: 1rem 0;
+            padding: 0.5rem;
+        }
+        button {
+            background: #0066cc;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #0052a3;
+        }
+        #output, #cleanedText {
+            white-space: pre-wrap;
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-top: 1rem;
+        }
+        .controls {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            margin: 1rem 0;
+            flex-wrap: wrap;
+        }
+        .control-group {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        .info {
+            background: #f0f7ff;
+            padding: 1rem;
+            border-radius: 4px;
+            margin: 1rem 0;
+        }
+        .section {
+            margin: 2rem 0;
+        }
+        #cleanedText {
+            white-space: pre-wrap;
+            background: #f5f5f5;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-top: 1rem;
+            max-height: 200px; 
+            overflow-y: auto;  
+        }
+    </style>
+</head>
+<body>
+    <h1>Statistical Text Generator</h1>
+    
+    <div class="info">
+        <strong>How it works:</strong> This generator analyzes the input text to learn patterns based on character sequences. 
+        The context size determines how many previous characters are used to predict the next one. 
+        A larger context size (4-5) creates more coherent but less varied output, 
+        while a smaller size (1-2) creates more random but potentially more creative results.
+        <br><br>
+        <strong>Note:</strong> The text is automatically cleaned to keep only letters, spaces, and basic punctuation.
+    </div>
+
+    <div class="section">
+        <h3>Input Text</h3>
+        <textarea id="inputText" placeholder="Enter your sample text here... (longer text works better)"></textarea>
+    </div>
+
+    <div class="controls">
+        <div class="control-group">
+            <label for="contextSize">Context Size:</label>
+            <input type="number" id="contextSize" value="3" min="1" max="5" title="Number of previous characters to consider">
+            <span>(1-5)</span>
+        </div>
+        
+        <div class="control-group">
+            <label for="length">Output Length:</label>
+            <input type="number" id="length" value="200" min="1" max="1000">
+            <span>word</span>
+        </div>
+
+        
+    </div>
+
+    <div class="section">
+        <h3>Cleaned Text</h3>
+        <div id="cleanedText"></div>
+    </div>
+
+    <div class="section">
+        <h3>Generated Text</h3>
+        <div id="output"></div>
+    </div>
+
+    <script src="https://unpkg.com/compromise"></script>
+    <script>
+
+function extractTerms(segment, tag) {
+  // segment.json() returns an array of objects for each matched phrase.
+  return segment.json().map(obj => {
+    // Each obj has a .terms array containing objects with .text and .tags.
+    // Find the term that includes the desired tag.
+    const term = obj.terms.find(t => t.tags && t.tags.includes(tag));
+    return term ? term.text : null;
+  }).filter(term => term !== null);
+}
+
+function analyzeTextNLP(text) {
+    const inputText = document.getElementById('inputText').value;
+  const doc = nlp(inputText);
+
+  // Extract raw terms using our helper function
+  let nouns = extractTerms(doc.nouns(), 'Noun');
+  let verbs = extractTerms(doc.verbs(), 'Verb');
+  let adjectives = extractTerms(doc.adjectives(), 'Adjective');
+
+  // --- Further filtering ---
+
+  // 1. Remove pronouns from the nouns list.
+  // Compromise provides pronoun detection; we can extract them and filter them out.
+  const pronouns = doc.pronouns().out('array').map(p => p.toLowerCase());
+  nouns = nouns.filter(word => !pronouns.includes(word.toLowerCase()));
+
+  // 2. Optionally, filter out verbs that appear to be gerunds or participles.
+  // You can do this by checking if the original verb text in the JSON contains a tag like 'Gerund'
+  // For this, we'll re-read the verbs JSON and filter out those with a 'Gerund' tag.
+  const verbJson = doc.verbs().json();
+  verbs = verbJson.map(v => {
+    // Use the root if available, but also check tags.
+    const term = v.terms.find(t => t.tags && t.tags.includes('Verb'));
+    return term ? term.text : v.text;
+  }).filter((verb, index) => {
+    // Check the corresponding JSON object for gerund or participle tags.
+    const tags = verbJson[index].terms.map(t => t.tags).flat();
+    // Filter out if tags include 'Gerund' or 'Participle' (adjust as needed).
+    if (tags.includes('Gerund') || tags.includes('Participle')) {
+      return false;
+    }
+    return true;
+  });
+
+  // Simple tone estimation based on sentence count and adjective richness:
+  const sentences = doc.sentences().out('array');
+  const sentiment = sentences.length > 3 || adjectives.length > 5 ? "Descriptive" : "Concise";
+
+  // Get the normalized text
+  const correctedText = doc.normalize().out('text');
+
+  document.getElementById('cleanedText').innerHTML = `
+      <strong>Corrected Text:</strong> ${correctedText} <br>
+      <strong>Nouns:</strong> ${nouns.join(', ') || "None"} <br>
+      <strong>Verbs:</strong> ${verbs.join(', ') || "None"} <br>
+      <strong>Adjectives:</strong> ${adjectives.join(', ') || "None"} <br>
+      <strong>Estimated Tone:</strong> ${sentiment}
+  `;
+
+    // const words = doc.terms().out('array').map(word => 
+    //     word.toLowerCase().replace(/^[^\w]+|[^\w]+$/g, '')
+    // ).filter(Boolean); // Remove empty strings
+    // return { words };
+
+    const words = text.split(/(\s+|[,.!?;:])/).filter(token => token.trim() !== "");
+    return { words };
+}
+
+class StatisticalTextModel {
+  constructor(contextSize = 2) {
+    this.contextSize = contextSize;
+    this.model = new Map();
+  }
+
+  // Build the model by processing each consecutive sequence of words
+  train(words) {
+    this.model.clear();
+    for (let i = 0; i < words.length - this.contextSize; i++) {
+      const context = words.slice(i, i + this.contextSize).join(' ');
+      const nextWord = words[i + this.contextSize];
+
+      if (!this.model.has(context)) {
+        this.model.set(context, new Map());
+      }
+
+      const freqMap = this.model.get(context);
+      freqMap.set(nextWord, (freqMap.get(nextWord) || 0) + 1);
+    }
+  }
+
+  // Improved weighted random selection
+  weightedRandom(freqMap) {
+    let total = 0;
+    for (const count of freqMap.values()) {
+      total += count;
+    }
+    let rand = Math.random() * total;
+    for (const [word, count] of freqMap.entries()) {
+      rand -= count;
+      if (rand <= 0) {
+        return word;
+      }
+    }
+    return null;
+  }
+
+  // Given a context, predict the next word. If not found, choose a random context.
+  predict(context) {
+    if (this.model.has(context)) {
+      return this.weightedRandom(this.model.get(context));
+    } else {
+      // Fallback: choose a random context key from the model and predict from it.
+      const contexts = Array.from(this.model.keys());
+      const randomContext = contexts[Math.floor(Math.random() * contexts.length)];
+      return this.weightedRandom(this.model.get(randomContext));
+    }
+  }
+}
+
+// Generates text based on the NLP analysis and the statistical model.
+function generateSmartText() {
+  const inputText = document.getElementById('inputText').value;
+  const contextSize = parseInt(document.getElementById('contextSize').value, 10);
+  const length = parseInt(document.getElementById('length').value, 10);
+
+  if (!inputText.trim()) {
+    alert("Please enter some text.");
+    return;
+  }
+
+  // Analyze text to get words
+  const { words } = analyzeTextNLP(inputText);
+  if (words.length < contextSize + 1) {
+    document.getElementById('output').textContent = "Not enough words to generate text.";
+    return;
+  }
+
+  // Train the statistical model
+  const model = new StatisticalTextModel(contextSize);
+  model.train(words);
+
+  // Start generating text with the first context words
+  let generatedWords = words.slice(0, contextSize);
+  for (let i = 0; i < length - contextSize; i++) {
+    const context = generatedWords.slice(-contextSize).join(' ');
+    const nextWord = model.predict(context);
+    if (!nextWord) break;
+    generatedWords.push(nextWord);
+  }
+  const generatedText = generatedWords.join(' ');
+
+  // Display the generated text
+  document.getElementById('output').textContent = generatedText;
+}
+
+// Aggiungi il pulsante per la generazione avanzata
+document.addEventListener("DOMContentLoaded", function() {
+    const button = document.createElement("button");
+    button.innerText = "Generate Smart Text (NLP + Stats)";
+    button.onclick = generateSmartText;
+    button.style.marginLeft = "10px";
+
+    document.querySelector(".controls").appendChild(button);
+});
+
+    </script>
+</body>
+</html>

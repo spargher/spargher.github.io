@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Generatore di Testo con TensorFlow.js</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      line-height: 1.5;
+    }
+    textarea {
+      width: 100%;
+      min-height: 150px;
+      margin: 1rem 0;
+      padding: 0.5rem;
+    }
+    button {
+      background: #0066cc;
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-right: 1rem;
+    }
+    button:hover {
+      background: #0052a3;
+    }
+    #output {
+      white-space: pre-wrap;
+      background: #f5f5f5;
+      padding: 1rem;
+      border-radius: 4px;
+      margin-top: 1rem;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      align-items: center;
+      margin: 1rem 0;
+    }
+    .control-group {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .info {
+      background: #f0f7ff;
+      padding: 1rem;
+      border-radius: 4px;
+      margin: 1rem 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>Generatore di Testo con TensorFlow.js</h1>
+  
+  <div class="info">
+    <strong>Come funziona:</strong> Inserisci del testo di esempio, scegli la dimensione del contesto (numero di parole usate come input) e il numero di parole da generare.  
+    Il sistema tokenizza il testo, addestra un semplice modello LSTM e poi genera del testo in maniera predittiva.  
+    <br><br>
+    <strong>Nota:</strong> L’addestramento avviene direttamente nel browser, quindi testi lunghi o un gran numero di epoche potrebbero rallentare il processo.
+  </div>
+
+  <div class="control-group">
+    <label for="inputText">Testo di Input:</label>
+    <textarea id="inputText" placeholder="Inserisci qui un testo di esempio..."></textarea>
+  </div>
+
+  <div class="controls">
+    <div class="control-group">
+      <label for="contextSize">Context Size:</label>
+      <input type="number" id="contextSize" value="3" min="1" max="10">
+    </div>
+    <div class="control-group">
+      <label for="outputLength">Lunghezza Output (parole):</label>
+      <input type="number" id="outputLength" value="50" min="1" max="500">
+    </div>
+    <div class="control-group">
+      <label for="epochs">Epoche:</label>
+      <input type="number" id="epochs" value="50" min="1" max="200">
+    </div>
+    <div class="control-group">
+      <label for="temperature">Temperature:</label>
+      <input type="number" id="temperature" value="1.0" step="0.1" min="0.1" max="2">
+    </div>
+    <button id="generateBtn">Train &amp; Genera Testo</button>
+  </div>
+
+  <h3>Output Generato</h3>
+  <div id="output"></div>
+
+  <!-- Includiamo TensorFlow.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+  <script>
+    // Funzione per tokenizzare il testo e creare il vocabolario
+    function preprocessText(text) {
+      // Convertiamo in minuscolo e suddividiamo in parole (semplificato)
+      const words = text.toLowerCase().match(/\S+/g) || [];
+      // Creiamo il vocabolario (insieme unico di parole)
+      const vocab = Array.from(new Set(words));
+      const word2idx = {};
+      const idx2word = {};
+      vocab.forEach((word, i) => {
+        word2idx[word] = i;
+        idx2word[i] = word;
+      });
+      return { words, vocab, word2idx, idx2word };
+    }
+
+    // Crea gli esempi di training a partire dalle sequenze
+    function createSequences(words, word2idx, sequenceLength) {
+      const inputs = [];
+      const labels = [];
+      for (let i = 0; i < words.length - sequenceLength; i++) {
+        const inputSeq = words.slice(i, i + sequenceLength).map(word => word2idx[word]);
+        const label = word2idx[words[i + sequenceLength]];
+        inputs.push(inputSeq);
+        labels.push(label);
+      }
+      return { inputs, labels };
+    }
+
+    // Funzione per campionare la parola successiva con temperature
+    function sample(predictions, temperature) {
+      // predictions è un tensore 1D
+      const preds = predictions.dataSync();
+      const logits = preds.map(p => Math.log(p + 1e-7) / temperature);
+      const exp_logits = logits.map(Math.exp);
+      const sumExp = exp_logits.reduce((a, b) => a + b, 0);
+      const probs = exp_logits.map(e => e / sumExp);
+      let rand = Math.random();
+      for (let i = 0; i < probs.length; i++) {
+        rand -= probs[i];
+        if (rand <= 0) return i;
+      }
+      return probs.length - 1;
+    }
+
+    // Funzione per costruire il modello LSTM
+    function buildModel(vocabSize, sequenceLength) {
+      const model = tf.sequential();
+      model.add(tf.layers.embedding({
+        inputDim: vocabSize,
+        outputDim: 64,
+        inputLength: sequenceLength
+      }));
+      model.add(tf.layers.lstm({ units: 128 }));
+      model.add(tf.layers.dense({ units: vocabSize, activation: 'softmax' }));
+      model.compile({
+        optimizer: tf.train.adam(),
+        loss: 'sparseCategoricalCrossentropy'
+      });
+      return model;
+    }
+
+    async function trainAndGenerateText() {
+      const inputText = document.getElementById('inputText').value;
+      if (!inputText.trim()) {
+        alert("Inserisci del testo di esempio.");
+        return;
+      }
+      
+      const contextSize = parseInt(document.getElementById('contextSize').value, 10);
+      const outputLength = parseInt(document.getElementById('outputLength').value, 10);
+      const epochs = parseInt(document.getElementById('epochs').value, 10);
+      const temperature = parseFloat(document.getElementById('temperature').value);
+
+      // Preprocessamento
+      const { words, word2idx, idx2word, vocab } = preprocessText(inputText);
+      if (words.length <= contextSize) {
+        document.getElementById('output').textContent = "Testo troppo breve per il context size scelto.";
+        return;
+      }
+      
+      const { inputs, labels } = createSequences(words, word2idx, contextSize);
+      const numExamples = inputs.length;
+      
+      // Converto gli array in tensori (gli input rimangono int32 per l'Embedding)
+      const xs = tf.tensor2d(inputs, [numExamples, contextSize], 'int32');
+      const ys = tf.tensor1d(labels, 'int32');
+      
+      // Costruisco il modello
+      const model = buildModel(vocab.length, contextSize);
+      document.getElementById('output').textContent = "Addestramento in corso...";
+      
+      // Addestramento del modello
+      await model.fit(xs, ys, {
+        epochs: epochs,
+        callbacks: {
+          onEpochEnd: (epoch, logs) => {
+            console.log(`Epoch ${epoch + 1}/${epochs}: loss = ${logs.loss.toFixed(4)}`);
+          }
+        }
+      });
+      
+      // Generazione del testo:
+      // Usiamo come seme le prime 'contextSize' parole del testo di input
+      let seedWords = words.slice(0, contextSize);
+      let generated = [...seedWords];
+      
+      for (let i = 0; i < outputLength; i++) {
+        const inputIndices = seedWords.map(word => word2idx[word]);
+        // Creiamo un tensore con shape [1, contextSize]
+        const inputTensor = tf.tensor2d([inputIndices], [1, contextSize], 'int32');
+        // Effettuiamo la predizione e forziamo il tensore a float32 per evitare errori interni
+        const prediction = model.predict(inputTensor).asType('float32');
+        // Usiamo la funzione di campionamento per ottenere l'indice della parola successiva
+        const predictedIdx = sample(prediction.squeeze(), temperature);
+        const predictedWord = idx2word[predictedIdx];
+        generated.push(predictedWord);
+        
+        // Aggiorniamo il seed: eliminiamo la prima parola e aggiungiamo quella predetta
+        seedWords = seedWords.slice(1).concat([predictedWord]);
+        
+        // Liberiamo la memoria dei tensori
+        tf.dispose([inputTensor, prediction]);
+      }
+      
+      document.getElementById('output').textContent = generated.join(' ');
+      
+      // Liberiamo la memoria usata dagli input
+      xs.dispose();
+      ys.dispose();
+    }
+    
+    document.getElementById('generateBtn').addEventListener('click', trainAndGenerateText);
+  </script>
+</body>
+</html>
+
+
+<!--
+
+Il flusso generale è il seguente:
+
+Preprocessing: Il testo di input viene tokenizzato (a livello di parola) e si crea il vocabolario (mappatura parola ⇔ indice).
+Creazione dei dati di training: Vengono creati degli esempi sequenziali in cui ogni sequenza di n parole (definita da "Context Size") è usata per predire la parola successiva.
+Definizione e training del modello: Si costruisce un modello con uno strato di embedding, uno strato LSTM e uno strato Dense con softmax.
+Generazione del testo: A partire da un seme (seed) iniziale, il modello predice ricorsivamente la parola successiva usando una funzione di campionamento che incorpora il parametro di "temperatura" per controllare la casualità.
+Nota:
+L’addestramento in-browser può essere lento, soprattutto con testi di grandi dimensioni o con molti epoch. È consigliabile testare con campioni di testo non troppo lunghi e con un numero ridotto di epoche per debug.
+
+
+Spiegazione dei punti principali
+Preprocessing e Tokenizzazione:
+La funzione preprocessText trasforma il testo in minuscolo e lo divide in parole (utilizzando una regex semplice). Si crea poi un vocabolario con le mappature word2idx e idx2word.
+
+Creazione degli Esempi di Training:
+La funzione createSequences scorre l’array delle parole e crea sequenze di lunghezza contextSize da cui viene estratta la parola successiva come target.
+
+Definizione del Modello:
+Viene creato un modello sequenziale con:
+
+Uno strato di Embedding per trasformare gli indici in vettori densi.
+Uno strato LSTM per catturare le dipendenze sequenziali.
+Uno strato Dense con attivazione softmax che restituisce la probabilità per ciascuna parola del vocabolario.
+Training e Generazione:
+Dopo l’addestramento (con il numero di epoche scelto), il modello genera del testo partendo da un seme iniziale e, ad ogni iterazione, predice la parola successiva. La funzione sample applica la temperatura per modulare la casualità del campionamento.
+-->

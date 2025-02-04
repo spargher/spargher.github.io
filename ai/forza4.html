@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Forza 4 - RL, Salvataggio e Self-Play con TensorFlow.js</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 800px;
+      margin: 2rem auto;
+      text-align: center;
+    }
+    #board {
+      display: grid;
+      grid-template-columns: repeat(7, 60px);
+      grid-gap: 5px;
+      margin: 20px auto;
+      width: max-content;
+    }
+    .cell {
+      width: 60px;
+      height: 60px;
+      background: #ddd;
+      border-radius: 50%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 24px;
+      cursor: pointer;
+    }
+    .player {
+      background: red;
+    }
+    .agent {
+      background: yellow;
+    }
+    #message {
+      font-size: 1.2rem;
+      margin: 10px;
+    }
+    #stats {
+      margin-top: 20px;
+      font-size: 0.9rem;
+    }
+    .button-group button {
+      margin: 5px;
+      padding: 5px 10px;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1>Forza 4 - RL con TensorFlow.js</h1>
+  <div id="message">Clicca su una colonna per giocare!</div>
+  <div id="board"></div>
+  <div class="button-group">
+    <button id="resetBtn">Nuova Partita</button>
+    <button id="saveModelBtn">Salva Modello</button>
+    <button id="loadModelBtn">Carica Modello</button>
+    <button id="startSelfPlayBtn">Avvia Self-Play</button>
+    <button id="stopSelfPlayBtn">Ferma Self-Play</button>
+  </div>
+  <div id="stats"></div>
+  
+  <!-- Includi TensorFlow.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+  <script>
+    /***********************
+     * Parametri di RL
+     ***********************/
+    const learningRate = 0.001;
+    const gamma = 0.95; // fattore di sconto
+    let epsilon = 1.0;  // esplorazione iniziale
+    const epsilonMin = 0.1;
+    const epsilonDecay = 0.995;
+    const agentMark = -1;  // Il computer (usiamo -1)
+    const playerMark = 1;  // Il giocatore (usiamo +1)
+    
+    /***********************
+     * Stato del Gioco
+     ***********************/
+    const ROWS = 6;
+    const COLS = 7;
+    let board = [];
+    let gameOver = false;
+    let experiences = []; // per salvare le esperienze durante la partita
+    
+    // Inizializza il tabellone (array di 42 elementi)
+    function initBoard() {
+      board = Array(ROWS * COLS).fill(0);
+      gameOver = false;
+      experiences = [];
+      renderBoard();
+      document.getElementById('message').textContent = "La partita è iniziata. Tocca una colonna per giocare!";
+    }
+    
+    /***********************
+     * Rendering del Tabellone
+     ***********************/
+    function renderBoard() {
+      const boardDiv = document.getElementById('board');
+      boardDiv.innerHTML = "";
+      for (let i = 0; i < board.length; i++) {
+        const cellDiv = document.createElement('div');
+        cellDiv.classList.add('cell');
+        cellDiv.dataset.index = i;
+        cellDiv.addEventListener('click', () => playerMove(Math.floor(i % COLS)));
+        if (board[i] === playerMark) {
+          cellDiv.classList.add('player');
+        } else if (board[i] === agentMark) {
+          cellDiv.classList.add('agent');
+        }
+        boardDiv.appendChild(cellDiv);
+      }
+    }
+    
+    /***********************
+     * Logica di Forza 4
+     ***********************/
+    // Restituisce la riga disponibile in una colonna (o -1 se piena)
+    function getAvailableRow(col) {
+      for (let row = ROWS - 1; row >= 0; row--) {
+        if (board[row * COLS + col] === 0) {
+          return row;
+        }
+      }
+      return -1;
+    }
+    
+    // Inserisce una pedina nella colonna data per un dato segno
+    function dropPiece(col, mark) {
+      const row = getAvailableRow(col);
+      if (row !== -1) {
+        board[row * COLS + col] = mark;
+        return row;
+      }
+      return -1;
+    }
+    
+    // Controlla se c'è un vincitore per un determinato segno
+    function checkWinner(mark) {
+      // Orizzontale
+      for (let row = 0; row < ROWS; row++) {
+        for (let col = 0; col < COLS - 3; col++) {
+          if (board[row * COLS + col] === mark &&
+              board[row * COLS + col + 1] === mark &&
+              board[row * COLS + col + 2] === mark &&
+              board[row * COLS + col + 3] === mark) {
+            return true;
+          }
+        }
+      }
+      // Verticale
+      for (let col = 0; col < COLS; col++) {
+        for (let row = 0; row < ROWS - 3; row++) {
+          if (board[row * COLS + col] === mark &&
+              board[(row+1) * COLS + col] === mark &&
+              board[(row+2) * COLS + col] === mark &&
+              board[(row+3) * COLS + col] === mark) {
+            return true;
+          }
+        }
+      }
+      // Diagonale (ascendente)
+      for (let row = 3; row < ROWS; row++) {
+        for (let col = 0; col < COLS - 3; col++) {
+          if (board[row * COLS + col] === mark &&
+              board[(row-1) * COLS + col + 1] === mark &&
+              board[(row-2) * COLS + col + 2] === mark &&
+              board[(row-3) * COLS + col + 3] === mark) {
+            return true;
+          }
+        }
+      }
+      // Diagonale (discendente)
+      for (let row = 0; row < ROWS - 3; row++) {
+        for (let col = 0; col < COLS - 3; col++) {
+          if (board[row * COLS + col] === mark &&
+              board[(row+1) * COLS + col + 1] === mark &&
+              board[(row+2) * COLS + col + 2] === mark &&
+              board[(row+3) * COLS + col + 3] === mark) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+    
+    // Controlla se il tabellone è pieno
+    function isBoardFull() {
+      return board.every(cell => cell !== 0);
+    }
+    
+    /***********************
+     * Q-Network e RL Agent
+     ***********************/
+    let model;
+    // Crea il modello Q-network
+    async function createModel() {
+      model = tf.sequential();
+      model.add(tf.layers.dense({inputShape: [ROWS * COLS], units: 64, activation: 'relu'}));
+      model.add(tf.layers.dense({units: 64, activation: 'relu'}));
+      model.add(tf.layers.dense({units: COLS, activation: 'linear'})); // 7 colonne (azioni)
+      model.compile({optimizer: tf.train.adam(learningRate), loss: 'meanSquaredError'});
+    }
+    
+    // Restituisce lo stato corrente come tensore [1, 42]
+    function getStateTensor() {
+      return tf.tensor2d([board], [1, ROWS * COLS], 'float32');
+    }
+    
+    // Sceglie la mossa dell'agente con strategia epsilon-greedy
+    async function agentMove() {
+      if (gameOver) return;
+      const stateTensor = getStateTensor();
+      let action;
+      if (Math.random() < epsilon) {
+        // Esplorazione: mossa casuale valida
+        const validActions = [];
+        for (let col = 0; col < COLS; col++) {
+          if (getAvailableRow(col) !== -1) validActions.push(col);
+        }
+        action = validActions[Math.floor(Math.random() * validActions.length)];
+      } else {
+        // Sfruttamento: scegli la mossa con Q massimo
+        const qValues = model.predict(stateTensor);
+        const qArray = await qValues.data();
+        for (let col = 0; col < COLS; col++) {
+          if (getAvailableRow(col) === -1) qArray[col] = -Infinity;
+        }
+        action = qArray.indexOf(Math.max(...qArray));
+      }
+      tf.dispose(stateTensor);
+      
+      // Effettua la mossa dell'agente
+      const row = dropPiece(action, agentMark);
+      if (row === -1) {
+        console.log("Mossa non valida scelta dall'agente, riprovo.");
+        return agentMove();
+      }
+      renderBoard();
+      
+      // Salva l'esperienza (stato, azione, reward temporaneo 0, prossimo stato)
+      const nextStateTensor = getStateTensor();
+      experiences.push({
+        state: board.slice(),
+        action: action,
+        reward: 0,
+        nextState: board.slice(),
+        done: false
+      });
+      tf.dispose(nextStateTensor);
+      
+      // Controlla se l'agente ha vinto
+      if (checkWinner(agentMark)) {
+        gameOver = true;
+        updateExperienceRewards(-1);
+        document.getElementById('message').textContent = "Il computer ha vinto!";
+        await trainFromExperiences();
+        updateEpsilon();
+        updateStats("Computer");
+        return;
+      }
+      // Controlla il pareggio
+      if (isBoardFull()) {
+        gameOver = true;
+        document.getElementById('message').textContent = "Pareggio!";
+        await trainFromExperiences();
+        updateEpsilon();
+        updateStats("Pareggio");
+        return;
+      }
+    }
+    
+    /***********************
+     * Training e Aggiornamento
+     ***********************/
+    // Aggiorna il reward per ogni esperienza a fine partita
+    function updateExperienceRewards(finalReward) {
+      experiences.forEach(exp => {
+        exp.reward = finalReward;
+        exp.done = true;
+      });
+    }
+    
+    // Esegue il training sul batch di esperienze raccolte
+    async function trainFromExperiences() {
+      if (experiences.length === 0) return;
+      const states = [];
+      const targets = [];
+      experiences.forEach(exp => {
+        states.push(exp.state);
+        const stateTensor = tf.tensor2d([exp.state], [1, ROWS * COLS], 'float32');
+        const qValuesTensor = model.predict(stateTensor);
+        const qValues = qValuesTensor.dataSync();
+        tf.dispose([stateTensor, qValuesTensor]);
+        let target = Array.from(qValues);
+        if (exp.done) {
+          target[exp.action] = exp.reward;
+        } else {
+          const nextStateTensor = tf.tensor2d([exp.nextState], [1, ROWS * COLS], 'float32');
+          const nextQ = model.predict(nextStateTensor);
+          const nextQValues = nextQ.dataSync();
+          tf.dispose([nextStateTensor, nextQ]);
+          target[exp.action] = exp.reward + gamma * Math.max(...nextQValues);
+        }
+        targets.push(target);
+      });
+      
+      const xs = tf.tensor2d(states, [states.length, ROWS * COLS], 'float32');
+      const ys = tf.tensor2d(targets, [targets.length, COLS], 'float32');
+      await model.fit(xs, ys, {epochs: 1, verbose: 0});
+      xs.dispose();
+      ys.dispose();
+      experiences = [];
+    }
+    
+    // Decresce epsilon per ridurre l'esplorazione
+    function updateEpsilon() {
+      if (epsilon > epsilonMin) {
+        epsilon *= epsilonDecay;
+      }
+    }
+    
+    /***********************
+     * Gestione del Gioco - Modalità Interattiva
+     ***********************/
+    // Mossa del giocatore tramite click
+    async function playerMove(col) {
+      if (gameOver) return;
+      const row = dropPiece(col, playerMark);
+      if (row === -1) return;  // colonna piena
+      renderBoard();
+      
+      if (checkWinner(playerMark)) {
+        gameOver = true;
+        updateExperienceRewards(1);
+        document.getElementById('message').textContent = "Hai vinto!";
+        await trainFromExperiences();
+        updateEpsilon();
+        updateStats("Giocatore");
+        return;
+      }
+      if (isBoardFull()) {
+        gameOver = true;
+        document.getElementById('message').textContent = "Pareggio!";
+        await trainFromExperiences();
+        updateEpsilon();
+        updateStats("Pareggio");
+        return;
+      }
+      
+      // Mossa dell'agente
+      await agentMove();
+    }
+    
+    /***********************
+     * Gestione del Gioco - Modalità Simulata (Self-Play)
+     ***********************/
+    // Versione simulata della mossa del giocatore (scelta casuale)
+    async function playerMoveSim(col) {
+      if (gameOver) return;
+      const row = dropPiece(col, playerMark);
+      if (row === -1) return;
+      renderBoard();
+      if (checkWinner(playerMark)) {
+        gameOver = true;
+        updateExperienceRewards(1);
+        document.getElementById('message').textContent = "Giocatore (random) ha vinto!";
+        return;
+      }
+      if (isBoardFull()) {
+        gameOver = true;
+        document.getElementById('message').textContent = "Pareggio!";
+        return;
+      }
+    }
+    
+    // Simula una partita in modalità self-play (giocatore random e agente)
+    async function simulateGame() {
+      initBoard();
+      // Ciclo finché la partita non è terminata
+      while (!gameOver) {
+        // Mossa del giocatore random
+        let validActions = [];
+        for (let col = 0; col < COLS; col++) {
+          if (getAvailableRow(col) !== -1) validActions.push(col);
+        }
+        if (validActions.length === 0) break;
+        let randomCol = validActions[Math.floor(Math.random() * validActions.length)];
+        await playerMoveSim(randomCol);
+        if (gameOver) break;
+        // Mossa dell'agente
+        await agentMove();
+      }
+      await trainFromExperiences();
+      updateEpsilon();
+      updateStats("SelfPlay");
+    }
+    
+    // Funzione di pausa per usare await sleep(ms)
+    function sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+    
+    // Loop continuo per la modalità self-play
+    let selfPlayRunning = false;
+    async function selfPlayLoop() {
+      while (selfPlayRunning) {
+        await simulateGame();
+        await sleep(100);  // piccola pausa per evitare blocchi del thread
+      }
+      document.getElementById('message').textContent = "Self-Play fermato.";
+    }
+    
+    function startSelfPlay() {
+      if (!selfPlayRunning) {
+        selfPlayRunning = true;
+        document.getElementById('message').textContent = "Self-Play avviato...";
+        selfPlayLoop();
+      }
+    }
+    
+    function stopSelfPlay() {
+      selfPlayRunning = false;
+    }
+    
+    /***********************
+     * Aggiornamento delle Statistiche
+     ***********************/
+    let gamesPlayed = 0;
+    const results = { "Giocatore": 0, "Computer": 0, "Pareggio": 0, "SelfPlay": 0 };
+    function updateStats(result) {
+      gamesPlayed++;
+      if (!results[result]) results[result] = 0;
+      results[result]++;
+      document.getElementById('stats').textContent =
+        `Partite giocate: ${gamesPlayed} | Vincite Giocatore: ${results["Giocatore"]} | Vincite Computer: ${results["Computer"]} | Pareggi: ${results["Pareggio"]} | Self-Play: ${results["SelfPlay"]}`;
+    }
+    
+    // In modalità self-play, aggiorniamo i risultati in modo separato
+    function updateStatsSelfPlay() {
+      gamesPlayed++;
+      results["SelfPlay"]++;
+      document.getElementById('stats').textContent =
+        `Partite giocate: ${gamesPlayed} | Vincite Giocatore: ${results["Giocatore"]} | Vincite Computer: ${results["Computer"]} | Pareggi: ${results["Pareggio"]} | Self-Play: ${results["SelfPlay"]}`;
+    }
+    
+    /***********************
+     * Salvataggio / Caricamento del Modello
+     ***********************/
+    async function saveModel() {
+      try {
+        await model.save('localstorage://connect4-model');
+        localStorage.setItem('connect4-epsilon', JSON.stringify(epsilon));
+        alert("Modello salvato con successo!");
+      } catch (err) {
+        console.error("Errore nel salvataggio del modello: ", err);
+      }
+    }
+    
+    async function loadModel() {
+      try {
+        model = await tf.loadLayersModel('localstorage://connect4-model');
+        model.compile({optimizer: tf.train.adam(learningRate), loss: 'meanSquaredError'});
+        const savedEpsilon = localStorage.getItem('connect4-epsilon');
+        if (savedEpsilon) {
+          epsilon = JSON.parse(savedEpsilon);
+        }
+        alert("Modello caricato con successo!");
+      } catch (err) {
+        console.error("Errore nel caricamento del modello: ", err);
+        alert("Nessun modello salvato trovato.");
+      }
+    }
+    
+    /***********************
+     * Setup Iniziale e Event Listeners
+     ***********************/
+    document.getElementById('resetBtn').addEventListener('click', initBoard);
+    document.getElementById('saveModelBtn').addEventListener('click', saveModel);
+    document.getElementById('loadModelBtn').addEventListener('click', loadModel);
+    document.getElementById('startSelfPlayBtn').addEventListener('click', startSelfPlay);
+    document.getElementById('stopSelfPlayBtn').addEventListener('click', stopSelfPlay);
+    
+    (async function() {
+      await createModel();
+      initBoard();
+    })();
+    
+  </script>
+</body>
+</html>

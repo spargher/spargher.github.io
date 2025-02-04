@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Forza 4 - RL, Salvataggio e Self-Play con TensorFlow.js</title>
+  <title>Forza 4 - RL con TensorFlow.js, Self-Play e Apprendimento dalle Dimostrazioni</title>
   <style>
     body {
       font-family: sans-serif;
@@ -85,7 +85,7 @@
     const COLS = 7;
     let board = [];
     let gameOver = false;
-    let experiences = []; // per salvare le esperienze durante la partita
+    let experiences = []; // Per salvare le esperienze (sia dell'agente che dell'avversario)
     
     // Inizializza il tabellone (array di 42 elementi)
     function initBoard() {
@@ -106,6 +106,7 @@
         const cellDiv = document.createElement('div');
         cellDiv.classList.add('cell');
         cellDiv.dataset.index = i;
+        // Quando l'utente clicca, la mossa viene interpretata come mossa del giocatore
         cellDiv.addEventListener('click', () => playerMove(Math.floor(i % COLS)));
         if (board[i] === playerMark) {
           cellDiv.classList.add('player');
@@ -119,7 +120,7 @@
     /***********************
      * Logica di Forza 4
      ***********************/
-    // Restituisce la riga disponibile in una colonna (o -1 se piena)
+    // Restituisce la riga disponibile nella colonna (oppure -1 se piena)
     function getAvailableRow(col) {
       for (let row = ROWS - 1; row >= 0; row--) {
         if (board[row * COLS + col] === 0) {
@@ -129,7 +130,7 @@
       return -1;
     }
     
-    // Inserisce una pedina nella colonna data per un dato segno
+    // Inserisce una pedina nella colonna data per il segno indicato
     function dropPiece(col, mark) {
       const row = getAvailableRow(col);
       if (row !== -1) {
@@ -139,7 +140,7 @@
       return -1;
     }
     
-    // Controlla se c'è un vincitore per un determinato segno
+    // Verifica se c'è un vincitore per un determinato segno (controllo orizzontale, verticale, diagonale)
     function checkWinner(mark) {
       // Orizzontale
       for (let row = 0; row < ROWS; row++) {
@@ -163,7 +164,7 @@
           }
         }
       }
-      // Diagonale (ascendente)
+      // Diagonale ascendente
       for (let row = 3; row < ROWS; row++) {
         for (let col = 0; col < COLS - 3; col++) {
           if (board[row * COLS + col] === mark &&
@@ -174,7 +175,7 @@
           }
         }
       }
-      // Diagonale (discendente)
+      // Diagonale discendente
       for (let row = 0; row < ROWS - 3; row++) {
         for (let col = 0; col < COLS - 3; col++) {
           if (board[row * COLS + col] === mark &&
@@ -188,7 +189,7 @@
       return false;
     }
     
-    // Controlla se il tabellone è pieno
+    // Verifica se il tabellone è pieno
     function isBoardFull() {
       return board.every(cell => cell !== 0);
     }
@@ -197,34 +198,34 @@
      * Q-Network e RL Agent
      ***********************/
     let model;
-    // Crea il modello Q-network
+    // Crea il Q-network
     async function createModel() {
       model = tf.sequential();
       model.add(tf.layers.dense({inputShape: [ROWS * COLS], units: 64, activation: 'relu'}));
       model.add(tf.layers.dense({units: 64, activation: 'relu'}));
-      model.add(tf.layers.dense({units: COLS, activation: 'linear'})); // 7 colonne (azioni)
+      model.add(tf.layers.dense({units: COLS, activation: 'linear'})); // 7 possibili azioni
       model.compile({optimizer: tf.train.adam(learningRate), loss: 'meanSquaredError'});
     }
     
-    // Restituisce lo stato corrente come tensore [1, 42]
+    // Restituisce lo stato corrente come tensore [1, 42] di tipo float32
     function getStateTensor() {
       return tf.tensor2d([board], [1, ROWS * COLS], 'float32');
     }
     
-    // Sceglie la mossa dell'agente con strategia epsilon-greedy
+    // L'agente sceglie la mossa tramite strategia epsilon-greedy
     async function agentMove() {
       if (gameOver) return;
       const stateTensor = getStateTensor();
       let action;
       if (Math.random() < epsilon) {
-        // Esplorazione: mossa casuale valida
+        // Esplorazione: scegli mossa casuale valida
         const validActions = [];
         for (let col = 0; col < COLS; col++) {
           if (getAvailableRow(col) !== -1) validActions.push(col);
         }
         action = validActions[Math.floor(Math.random() * validActions.length)];
       } else {
-        // Sfruttamento: scegli la mossa con Q massimo
+        // Sfruttamento: usa la rete per scegliere la mossa con il Q massimo
         const qValues = model.predict(stateTensor);
         const qArray = await qValues.data();
         for (let col = 0; col < COLS; col++) {
@@ -234,7 +235,7 @@
       }
       tf.dispose(stateTensor);
       
-      // Effettua la mossa dell'agente
+      // Esegue la mossa dell'agente
       const row = dropPiece(action, agentMark);
       if (row === -1) {
         console.log("Mossa non valida scelta dall'agente, riprovo.");
@@ -242,18 +243,19 @@
       }
       renderBoard();
       
-      // Salva l'esperienza (stato, azione, reward temporaneo 0, prossimo stato)
+      // Registra l'esperienza per la mossa dell'agente
       const nextStateTensor = getStateTensor();
       experiences.push({
-        state: board.slice(),
+        state: board.slice(), // copia dello stato dopo la mossa
         action: action,
         reward: 0,
         nextState: board.slice(),
-        done: false
+        done: false,
+        demo: false
       });
       tf.dispose(nextStateTensor);
       
-      // Controlla se l'agente ha vinto
+      // Verifica se l'agente ha vinto
       if (checkWinner(agentMark)) {
         gameOver = true;
         updateExperienceRewards(-1);
@@ -263,7 +265,7 @@
         updateStats("Computer");
         return;
       }
-      // Controlla il pareggio
+      // Pareggio
       if (isBoardFull()) {
         gameOver = true;
         document.getElementById('message').textContent = "Pareggio!";
@@ -277,7 +279,7 @@
     /***********************
      * Training e Aggiornamento
      ***********************/
-    // Aggiorna il reward per ogni esperienza a fine partita
+    // Alla fine della partita, aggiorna il reward per tutte le esperienze raccolte
     function updateExperienceRewards(finalReward) {
       experiences.forEach(exp => {
         exp.reward = finalReward;
@@ -285,7 +287,7 @@
       });
     }
     
-    // Esegue il training sul batch di esperienze raccolte
+    // Effettua il training sul batch di esperienze raccolte
     async function trainFromExperiences() {
       if (experiences.length === 0) return;
       const states = [];
@@ -317,7 +319,7 @@
       experiences = [];
     }
     
-    // Decresce epsilon per ridurre l'esplorazione
+    // Aggiorna epsilon per ridurre l'esplorazione
     function updateEpsilon() {
       if (epsilon > epsilonMin) {
         epsilon *= epsilonDecay;
@@ -327,12 +329,25 @@
     /***********************
      * Gestione del Gioco - Modalità Interattiva
      ***********************/
-    // Mossa del giocatore tramite click
+    // Mossa del giocatore (interattiva) – in questo caso, oltre a eseguire la mossa, registriamo
+    // l'esperienza come "demonstration" in modo che il modello impari anche dalle mosse dell'avversario.
     async function playerMove(col) {
       if (gameOver) return;
+      // Salva lo stato prima della mossa
+      const prevState = board.slice();
       const row = dropPiece(col, playerMark);
       if (row === -1) return;  // colonna piena
       renderBoard();
+      
+      // Registra l'esperienza della mossa del giocatore (demonstration)
+      experiences.push({
+        state: prevState,
+        action: col,
+        reward: 0,
+        nextState: board.slice(),
+        done: false,
+        demo: true
+      });
       
       if (checkWinner(playerMark)) {
         gameOver = true;
@@ -352,19 +367,28 @@
         return;
       }
       
-      // Mossa dell'agente
+      // Ora tocca all'agente
       await agentMove();
     }
     
     /***********************
      * Gestione del Gioco - Modalità Simulata (Self-Play)
      ***********************/
-    // Versione simulata della mossa del giocatore (scelta casuale)
+    // Mossa del giocatore simulato (random) – anche qui registriamo l'esperienza per apprendere dalle dimostrazioni.
     async function playerMoveSim(col) {
       if (gameOver) return;
+      const prevState = board.slice();
       const row = dropPiece(col, playerMark);
       if (row === -1) return;
       renderBoard();
+      experiences.push({
+        state: prevState,
+        action: col,
+        reward: 0,
+        nextState: board.slice(),
+        done: false,
+        demo: true
+      });
       if (checkWinner(playerMark)) {
         gameOver = true;
         updateExperienceRewards(1);
@@ -378,10 +402,10 @@
       }
     }
     
-    // Simula una partita in modalità self-play (giocatore random e agente)
+    // Simula una partita in modalità self-play: il "giocatore" fa mosse random (registrate come demo)
+    // e l'agente gioca secondo la sua strategia.
     async function simulateGame() {
       initBoard();
-      // Ciclo finché la partita non è terminata
       while (!gameOver) {
         // Mossa del giocatore random
         let validActions = [];
@@ -392,7 +416,6 @@
         let randomCol = validActions[Math.floor(Math.random() * validActions.length)];
         await playerMoveSim(randomCol);
         if (gameOver) break;
-        // Mossa dell'agente
         await agentMove();
       }
       await trainFromExperiences();
@@ -400,7 +423,7 @@
       updateStats("SelfPlay");
     }
     
-    // Funzione di pausa per usare await sleep(ms)
+    // Funzione di pausa (await sleep(ms))
     function sleep(ms) {
       return new Promise(resolve => setTimeout(resolve, ms));
     }
@@ -410,7 +433,7 @@
     async function selfPlayLoop() {
       while (selfPlayRunning) {
         await simulateGame();
-        await sleep(100);  // piccola pausa per evitare blocchi del thread
+        await sleep(100);  // breve pausa per evitare blocchi
       }
       document.getElementById('message').textContent = "Self-Play fermato.";
     }
@@ -436,14 +459,6 @@
       gamesPlayed++;
       if (!results[result]) results[result] = 0;
       results[result]++;
-      document.getElementById('stats').textContent =
-        `Partite giocate: ${gamesPlayed} | Vincite Giocatore: ${results["Giocatore"]} | Vincite Computer: ${results["Computer"]} | Pareggi: ${results["Pareggio"]} | Self-Play: ${results["SelfPlay"]}`;
-    }
-    
-    // In modalità self-play, aggiorniamo i risultati in modo separato
-    function updateStatsSelfPlay() {
-      gamesPlayed++;
-      results["SelfPlay"]++;
       document.getElementById('stats').textContent =
         `Partite giocate: ${gamesPlayed} | Vincite Giocatore: ${results["Giocatore"]} | Vincite Computer: ${results["Computer"]} | Pareggi: ${results["Pareggio"]} | Self-Play: ${results["SelfPlay"]}`;
     }

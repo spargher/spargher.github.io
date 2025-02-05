@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Forza 4 - RL con TensorFlow.js, Self-Play e CNN</title>
+  <title>Forza 4 - RL con TensorFlow.js, Self-Play, CNN, LSTM e apprendimento dalle mosse umane</title>
   <style>
     body {
       font-family: sans-serif;
@@ -52,7 +52,7 @@
   </style>
 </head>
 <body>
-  <h1>Forza 4 - RL con TensorFlow.js e CNN</h1>
+  <h1>Forza 4 - RL con TensorFlow.js, Self-Play, CNN, LSTM e apprendimento dalle mosse umane</h1>
   <div id="message">Clicca su una colonna per giocare!</div>
   <div id="board"></div>
   <div class="button-group">
@@ -76,8 +76,8 @@
     let epsilon = 1.0;  // esplorazione iniziale
     const epsilonMin = 0.1;
     const epsilonDecay = 0.995;
-    const agentMark = -1;  // per il computer
-    const playerMark = 1;  // per il giocatore
+    const agentMark = -1;  // segno del computer
+    const playerMark = 1;  // segno dell'umano
     
     /***********************
      * Stato del Gioco
@@ -87,6 +87,11 @@
     let board = [];
     let gameOver = false;
     let experiences = []; // Esperienze per il training
+    
+    // Funzione di pausa per consentire al browser di aggiornare l'interfaccia
+    function sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
     
     // Inizializza il tabellone (array di 42 elementi)
     function initBoard() {
@@ -107,7 +112,7 @@
         const cellDiv = document.createElement('div');
         cellDiv.classList.add('cell');
         cellDiv.dataset.index = i;
-        // In modalità interattiva, il click è interpretato come mossa del giocatore
+        // Il click viene interpretato come mossa del giocatore (modalità interattiva)
         cellDiv.addEventListener('click', () => playerMove(Math.floor(i % COLS)));
         if (board[i] === playerMark) {
           cellDiv.classList.add('player');
@@ -196,28 +201,38 @@
     }
     
     /***********************
-     * Q-Network e RL Agent (con CNN)
+     * Q-Network e RL Agent (con CNN e LSTM)
      ***********************/
     let model;
-    // Crea il Q-network con un layer CNN
+    // Crea il Q-network: una CNN per estrarre feature spaziali seguita da un layer LSTM per catturare relazioni lungo le righe
     async function createModel() {
       model = tf.sequential();
-      // Inizialmente, il modello riceve un vettore di 42 elementi, che viene rimodellato in [6,7,1]
-      model.add(tf.layers.reshape({targetShape: [ROWS, COLS, 1], inputShape: [ROWS * COLS]}));
-      // Layer CNN per estrarre pattern spaziali
+      // 1. Rimodella l'input da un vettore di 42 a una matrice 6x7 con 1 canale
+      model.add(tf.layers.reshape({ targetShape: [ROWS, COLS, 1], inputShape: [ROWS * COLS] }));
+      
+      // 2. Layer CNN con kernel 4x4 per estrarre pattern spaziali
       model.add(tf.layers.conv2d({
         filters: 32,
-        kernelSize: [4,4],
+        kernelSize: [4, 4],
         activation: 'relu',
         padding: 'same'
       }));
-      // Appiattiamo l'output della CNN
-      model.add(tf.layers.flatten());
-      // Uno o più layer densi per processare le features estratte
+      // L'output della CNN ha forma [6, 7, 32]
+      
+      // 3. Rimodella l'output della CNN in una sequenza: consideriamo le righe come time steps.
+      //    La nuova forma sarà [6, 7*32] cioè [6, 224]
+      model.add(tf.layers.reshape({ targetShape: [ROWS, COLS * 32] }));
+      
+      // 4. Layer LSTM per catturare dipendenze lungo la sequenza (6 time steps)
+      model.add(tf.layers.lstm({ units: 64 }));
+      
+      // 5. Layer denso intermedio
       model.add(tf.layers.dense({ units: 64, activation: 'relu' }));
-      // Layer di output: 7 possibili azioni
+      
+      // 6. Layer di output: 7 possibili azioni (colonne)
       model.add(tf.layers.dense({ units: COLS, activation: 'linear' }));
-      model.compile({optimizer: tf.train.adam(learningRate), loss: 'meanSquaredError'});
+      
+      model.compile({ optimizer: tf.train.adam(learningRate), loss: 'meanSquaredError' });
     }
     
     // Restituisce lo stato corrente come tensore [1, 42] (float32)
@@ -230,21 +245,23 @@
       if (gameOver) return;
       const stateTensor = getStateTensor();
       let action;
+      const validActions = [];
+      for (let col = 0; col < COLS; col++) {
+        if (getAvailableRow(col) !== -1) validActions.push(col);
+      }
+      if(validActions.length === 0) return;
+      
       if (Math.random() < epsilon) {
-        // Esplorazione: scegli mossa casuale valida
-        const validActions = [];
-        for (let col = 0; col < COLS; col++) {
-          if (getAvailableRow(col) !== -1) validActions.push(col);
-        }
+        // Esplorazione: sceglie casualmente tra le mosse valide
         action = validActions[Math.floor(Math.random() * validActions.length)];
       } else {
-        // Sfruttamento: usa la rete per scegliere la mossa con il Q massimo
         const qValues = model.predict(stateTensor);
         const qArray = await qValues.data();
         for (let col = 0; col < COLS; col++) {
           if (getAvailableRow(col) === -1) qArray[col] = -Infinity;
         }
         action = qArray.indexOf(Math.max(...qArray));
+        tf.dispose(qValues);
       }
       tf.dispose(stateTensor);
       
@@ -255,8 +272,9 @@
         return agentMove();
       }
       renderBoard();
+      await sleep(50);
       
-      // Registra l'esperienza per la mossa dell'agente (modalità interattiva)
+      // Registra l'esperienza per la mossa dell'agente
       const nextStateTensor = getStateTensor();
       experiences.push({
         state: board.slice(), // copia dello stato dopo la mossa
@@ -268,7 +286,7 @@
       });
       tf.dispose(nextStateTensor);
       
-      // Verifica se l'agente ha vinto
+      // Controlla se l'agente ha vinto o se c'è pareggio
       if (checkWinner(agentMark)) {
         gameOver = true;
         updateExperienceRewards(-1);
@@ -278,7 +296,6 @@
         updateStats("Computer");
         return;
       }
-      // Pareggio
       if (isBoardFull()) {
         gameOver = true;
         document.getElementById('message').textContent = "Pareggio!";
@@ -292,7 +309,7 @@
     /***********************
      * Training e Aggiornamento
      ***********************/
-    // Alla fine della partita, aggiorna il reward per tutte le esperienze raccolte (modalità interattiva)
+    // Alla fine della partita (o dopo una mossa), aggiorna il reward per tutte le esperienze accumulate se il gioco è terminato
     function updateExperienceRewards(finalReward) {
       experiences.forEach(exp => {
         exp.reward = finalReward;
@@ -300,7 +317,7 @@
       });
     }
     
-    // Effettua il training sul batch di esperienze raccolte
+    // Esegue il training sul batch di esperienze raccolte
     async function trainFromExperiences() {
       if (experiences.length === 0) return;
       const states = [];
@@ -326,7 +343,7 @@
       
       const xs = tf.tensor2d(states, [states.length, ROWS * COLS], 'float32');
       const ys = tf.tensor2d(targets, [targets.length, COLS], 'float32');
-      await model.fit(xs, ys, {epochs: 1, verbose: 0});
+      await model.fit(xs, ys, { epochs: 1, verbose: 0 });
       xs.dispose();
       ys.dispose();
       experiences = [];
@@ -342,16 +359,15 @@
     /***********************
      * Gestione del Gioco - Modalità Interattiva
      ***********************/
-    // Mossa del giocatore (interattiva)
+    // La mossa dell'umano viene registrata come "demonstration" e il modello esegue anche un training immediato
     async function playerMove(col) {
       if (gameOver) return;
-      // Salva lo stato prima della mossa
       const prevState = board.slice();
       const row = dropPiece(col, playerMark);
       if (row === -1) return;  // colonna piena
       renderBoard();
+      await sleep(50);
       
-      // Registra l'esperienza della mossa del giocatore (demonstration)
       experiences.push({
         state: prevState,
         action: col,
@@ -360,6 +376,9 @@
         done: false,
         demo: true
       });
+      
+      // Esegui subito un training per apprendere anche dalle mosse umane
+      await trainFromExperiences();
       
       if (checkWinner(playerMark)) {
         gameOver = true;
@@ -379,30 +398,27 @@
         return;
       }
       
-      // Ora tocca all'agente (modalità interattiva)
+      // Passa il turno all'agente
       await agentMove();
     }
     
     /****************************************************
      * Modalità Self-Play (Entrambe le mosse sono agenti)
      ****************************************************/
-    
-    // Funzione per eseguire una mossa in modalità self-play
-    // Il parametro "mark" indica il segno del giocatore corrente (es. +1 o -1)
     async function agentSelfPlayMove(mark) {
       if (gameOver) return;
       const state = board.slice();
       const stateTensor = tf.tensor2d([state], [1, ROWS * COLS], 'float32');
       let action;
+      const validActions = [];
+      for (let col = 0; col < COLS; col++) {
+        if (getAvailableRow(col) !== -1) validActions.push(col);
+      }
+      if (validActions.length === 0) return;
+      
       if (Math.random() < epsilon) {
-        // Esplorazione: scegli una mossa valida casuale
-        const validActions = [];
-        for (let col = 0; col < COLS; col++) {
-          if (getAvailableRow(col) !== -1) validActions.push(col);
-        }
         action = validActions[Math.floor(Math.random() * validActions.length)];
       } else {
-        // Sfruttamento: usa la rete per scegliere la mossa migliore
         const qValues = model.predict(stateTensor);
         const qArray = await qValues.data();
         for (let col = 0; col < COLS; col++) {
@@ -419,8 +435,8 @@
         return agentSelfPlayMove(mark);
       }
       renderBoard();
+      await sleep(50);
       
-      // Registra l'esperienza includendo il "mark" per sapere a chi appartiene la mossa
       experiences.push({
         state: state,
         action: action,
@@ -431,30 +447,21 @@
         mark: mark
       });
       
-      // Verifica se questa mossa ha vinto o se il tabellone è pieno
-      if (checkWinner(mark)) {
-        gameOver = true;
-      }
-      if (isBoardFull()) {
+      if (checkWinner(mark) || isBoardFull()) {
         gameOver = true;
       }
     }
     
-    // Simula una partita in modalità self-play in cui entrambi i giocatori sono agenti
     async function simulateSelfPlayGame() {
       initBoard();
-      // Alterniamo i turni: partiamo con mark = playerMark (ad es. +1) e poi agentMark (-1)
       let currentMark = playerMark;
       while (!gameOver) {
         await agentSelfPlayMove(currentMark);
         if (gameOver) break;
-        // Alterna il turno
         currentMark = (currentMark === playerMark) ? agentMark : playerMark;
-        // Breve pausa per rendere visibili le mosse (opzionale)
         await sleep(100);
       }
       
-      // Determina il risultato e aggiorna i reward per ogni esperienza:
       let winner = null;
       if (checkWinner(playerMark)) winner = playerMark;
       else if (checkWinner(agentMark)) winner = agentMark;
@@ -471,7 +478,9 @@
           exp.reward = (exp.mark === winner) ? 1 : -1;
           exp.done = true;
         });
-        document.getElementById('message').textContent = (winner === playerMark) ? "Self-Play: il giocatore (mark +1) ha vinto!" : "Self-Play: il giocatore (mark -1) ha vinto!";
+        document.getElementById('message').textContent = (winner === playerMark) ?
+          "Self-Play: il giocatore (mark +1) ha vinto!" :
+          "Self-Play: il giocatore (mark -1) ha vinto!";
         updateStats((winner === playerMark) ? "SelfPlay Player" : "SelfPlay Agent");
       }
       
@@ -479,12 +488,6 @@
       updateEpsilon();
     }
     
-    // Funzione di pausa (await sleep(ms))
-    function sleep(ms) {
-      return new Promise(resolve => setTimeout(resolve, ms));
-    }
-    
-    // Loop continuo per la modalità self-play
     let selfPlayRunning = false;
     async function selfPlayLoop() {
       while (selfPlayRunning) {
@@ -535,7 +538,7 @@
     async function loadModel() {
       try {
         model = await tf.loadLayersModel('localstorage://connect4-model');
-        model.compile({optimizer: tf.train.adam(learningRate), loss: 'meanSquaredError'});
+        model.compile({ optimizer: tf.train.adam(learningRate), loss: 'meanSquaredError' });
         const savedEpsilon = localStorage.getItem('connect4-epsilon');
         if (savedEpsilon) {
           epsilon = JSON.parse(savedEpsilon);

@@ -207,7 +207,7 @@
       // Layer CNN per estrarre pattern spaziali
       model.add(tf.layers.conv2d({
         filters: 32,
-        kernelSize: 3,
+        kernelSize: [4,4],
         activation: 'relu',
         padding: 'same'
       }));
